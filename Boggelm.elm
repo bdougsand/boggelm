@@ -4,14 +4,16 @@ import StartApp.Simple as StartApp
 import Html exposing (..)
 import Html.Attributes exposing (class, href, style)
 import Html.Events exposing (onClick)
-import List exposing (indexedMap, filter, map)
-import String
+import List exposing (all, drop, filter, head, indexedMap, length, map, member, take)
+import Maybe exposing (andThen)
+import String exposing (join)
 
 type alias Row = List(String)
 
 type alias Board = {
     rows: List(Row),
-    currentPath: WordPath
+    currentPath: WordPath,
+    words: List(String)
 }
 
 type alias TilePos = (Int, Int)
@@ -23,6 +25,7 @@ type Action
   | SelectTile TilePos
   | RemoveTile TilePos
   | ClearBoard
+  | CompleteWord
 
 validPos : Pos -> Bool
 validPos pos = True
@@ -32,8 +35,18 @@ zip xs ys =
     (x :: xs', y :: ys') -> (x,y) :: zip xs' ys'
     (_, _) -> []
 
---validSuccessor : Pos -> Pos -> Bool
---validSuccessor last next =
+butlast xs =
+  take (length xs - 1) xs
+
+last xs =
+  head (drop (length xs - 1) xs)
+
+nth n xs =
+  if n > 0 then
+    take 1 (drop n xs)
+  else
+    nth ((length xs) + n) xs
+
 
 
 tileStyle =
@@ -46,7 +59,16 @@ tileStyle =
   , ("font-size", "20pt")
   , ("display", "inline-block")]
 
-letterStyle = tileStyle
+letterStyle =
+  [ ("width", "50px")
+  , ("height", "50px")
+  , ("font-style", "bold")
+  , ("font-size", "14pt")
+  , ("display", "inline-block")]
+
+selectedStyle =
+  tileStyle ++ [ ("background-color", "lightgray")
+               , ("color", "red") ]
 
 boardStyle =
   [ ("border-top", "1px solid black")
@@ -56,11 +78,73 @@ boardStyle =
 currentWordStyle =
   [ ("margin-top", "20px") ]
 
+removeTile model pos =
+  let
+    {currentPath} = model
+  in
+    case last model.currentPath of
+      Nothing -> model
+      Just lastPos -> if pos == lastPos then
+                        {model | currentPath = butlast currentPath}
+                      else
+                        model
+
+validSuccessor : Maybe TilePos -> TilePos -> Bool
+validSuccessor lastPos (x2, y2) =
+  case lastPos of
+    Nothing -> True
+    Just (x1, y1) ->
+      all ((<=) 0) [x1, y1, x2, y2, abs (x1-x2), abs (y1-y2)] &&
+          abs (x1 - x2) < 2 &&
+          abs (y1 - y2) < 2 &&
+          (x1, y1) /= (x2, y2)
+
+selectTile model pos =
+  let
+    {currentPath} = model
+    lastPos = last currentPath
+  in
+    if not (member pos currentPath) &&
+       validSuccessor lastPos pos
+    then
+      {model | currentPath = currentPath ++ [pos]}
+    else
+      model
+
+tileArray rows =
+  Array.fromList (map Array.fromList rows)
+
+getLetter rowsArray (rowIdx, colIdx) =
+  case get rowIdx rowsArray `andThen` get colIdx of
+    Nothing -> ""
+    Just letter -> letter
+
+getWord rows path =
+  join "" (map (getLetter (tileArray rows)) path)
+
+completeWord model =
+  let
+    {currentPath, rows, words} = model
+    word = getWord rows currentPath
+  in
+    { model | words = if String.isEmpty word || member word words
+                      then
+                        words
+                      else
+                        words ++ [word],
+              currentPath = []}
+
 viewLetter address currentPath rowIdx colIdx letter =
-  a [class "letter-box"
-    , style tileStyle
-    , onClick address (SelectTile (rowIdx, colIdx))]
-  [text letter]
+  if member (rowIdx, colIdx) currentPath then
+    a [ class "letter-box"
+      , style selectedStyle
+      , onClick address NoOp] [text letter]
+   else
+     a [class "letter-box"
+       , href "#"
+       , style tileStyle
+       , onClick address (SelectTile (rowIdx, colIdx))]
+     [text letter]
 
 viewRow address currentPath rowIdx row =
   div [class "row"] (indexedMap (viewLetter address currentPath rowIdx) row)
@@ -68,38 +152,40 @@ viewRow address currentPath rowIdx row =
 viewBoard address {rows, currentPath} =
   indexedMap (viewRow address currentPath) rows
 
-
-getLetter rows (rowIdx, colIdx) =
-  case get rowIdx (Array.fromList rows) of
-    Nothing -> Nothing
-    Just letters ->
-      get colIdx (Array.fromList letters)
-
 currentWordDiv address {rows, currentPath} =
   let
-    letters = zip (map (getLetter rows) currentPath) currentPath
+    rowsArray = tileArray rows
+    letters = zip (map (getLetter rowsArray) currentPath) currentPath
   in
     div [ class "word"
         , style currentWordStyle]
-    (map (\(maybeLetter, pos) ->
+    (map (\(letter, pos) ->
             div [class "letter"
                 , style letterStyle
                 , onClick address (RemoveTile pos)]
-            [text (case maybeLetter of
-                     Nothing -> ""
-                     Just letter -> letter)]) letters)
+            [text letter]) letters)
 
 clearBoardLink address =
   button [ class "clear-board"
          , onClick address ClearBoard]
   [text "Clear"]
 
+completeWordLink address =
+  button [ class "complete-word"
+         , onClick address CompleteWord]
+  [text "Save"]
+
+wordList address model =
+  ul [ class "word-list" ]
+     (map (text >> (li [ class "word" ])) model.words)
+
 model: Board
 model = {rows = [["A", "B", "C", "D"]
                 ,["E", "F", "G", "H"]
                 ,["I", "J", "K", "L"]
                 ,["M", "N", "O", "P"]],
-         currentPath = []}
+         currentPath = [],
+         words = []}
 
 view address model = div [class "game"]
                      [ div [class  "board", style boardStyle] (viewBoard address model)
@@ -109,9 +195,10 @@ view address model = div [class "game"]
 update action model =
   case action of
     NoOp -> model
-    SelectTile (x, y) -> {model | currentPath = model.currentPath ++ [(x, y)]}
-    RemoveTile pos -> {model | currentPath = filter ((/=) pos) model.currentPath}
+    SelectTile pos -> selectTile model pos
+    RemoveTile pos -> removeTile model pos
     ClearBoard -> {model | currentPath = []}
+    CompleteWord -> completeWord model
 
 main = StartApp.start { model = model
                       , view = view
