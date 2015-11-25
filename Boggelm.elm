@@ -47,7 +47,7 @@ nth n xs =
   else
     nth ((length xs) + n) xs
 
-
+makeList x = [x]
 
 tileStyle =
   [ ("width", "75px")
@@ -177,7 +177,7 @@ completeWordLink address =
 
 wordList address model =
   ul [ class "word-list" ]
-     (map (text >> (li [ class "word" ])) model.words)
+     (map (text >> makeList >> (li [ class "word" ])) model.words)
 
 model: Board
 model = {rows = [["A", "B", "C", "D"]
@@ -190,7 +190,9 @@ model = {rows = [["A", "B", "C", "D"]
 view address model = div [class "game"]
                      [ div [class  "board", style boardStyle] (viewBoard address model)
                      , currentWordDiv address model
-                     , clearBoardLink address]
+                     , clearBoardLink address
+                     , completeWordLink address
+                     , wordList address model]
 
 update action model =
   case action of
