@@ -1,4 +1,5 @@
 import Array exposing (get)
+import Char
 import Graphics.Element exposing (..)
 import StartApp.Simple as StartApp
 import Html exposing (..)
@@ -7,13 +8,15 @@ import Html.Events exposing (onClick)
 import List exposing (all, drop, filter, head, indexedMap, length, map, member, take)
 import Maybe exposing (andThen)
 import String exposing (join)
+import Random as R
 
 type alias Row = List(String)
 
 type alias Board = {
     rows: List(Row),
     currentPath: WordPath,
-    words: List(String)
+    words: List(String),
+    seed: R.Seed
 }
 
 type alias TilePos = (Int, Int)
@@ -26,6 +29,8 @@ type Action
   | RemoveTile TilePos
   | ClearBoard
   | CompleteWord
+  | Regenerate
+  | RemoveWord String
 
 validPos : Pos -> Bool
 validPos pos = True
@@ -76,7 +81,8 @@ boardStyle =
   , ("margin", "1em")]
 
 currentWordStyle =
-  [ ("margin-top", "20px") ]
+  [ ("margin", "20px")
+  , ("height", "30px")]
 
 removeTile model pos =
   let
@@ -134,6 +140,25 @@ completeWord model =
                         words ++ [word],
               currentPath = []}
 
+removeWord model word =
+  { model | words = filter ((/=) word) model.words }
+
+letterGen =
+  R.map (Char.fromCode >> String.fromChar) (R.int 65 90)
+
+letterListGen =
+  R.list 4 letterGen
+
+rowsGen =
+  R.list 4 letterListGen
+
+regenerateRows model =
+  let
+    (rows, newSeed) = R.generate rowsGen model.seed
+  in
+    { model | rows = rows,
+              seed = newSeed }
+
 viewLetter address currentPath rowIdx colIdx letter =
   if member (rowIdx, colIdx) currentPath then
     a [ class "letter-box"
@@ -175,9 +200,18 @@ completeWordLink address =
          , onClick address CompleteWord]
   [text "Save"]
 
+regenerateLink address =
+  button [ onClick address Regenerate ] [ text "Regenerate" ]
+
+workListItem address word =
+  li [class "word"] [ text word
+                    , a [ href "#"
+                        , onClick address (RemoveWord word) ]
+                        [ text " x" ]]
+
 wordList address model =
   ul [ class "word-list" ]
-     (map (text >> makeList >> (li [ class "word" ])) model.words)
+     (map (workListItem address) model.words)
 
 model: Board
 model = {rows = [["A", "B", "C", "D"]
@@ -185,14 +219,17 @@ model = {rows = [["A", "B", "C", "D"]
                 ,["I", "J", "K", "L"]
                 ,["M", "N", "O", "P"]],
          currentPath = [],
-         words = []}
+         words = [],
+         seed = R.initialSeed 23}
 
-view address model = div [class "game"]
-                     [ div [class  "board", style boardStyle] (viewBoard address model)
-                     , currentWordDiv address model
-                     , clearBoardLink address
-                     , completeWordLink address
-                     , wordList address model]
+view address model =
+  div [class "game"]
+      [ div [class "board", style boardStyle] (viewBoard address model)
+      , currentWordDiv address model
+      , clearBoardLink address
+      , div [] [completeWordLink address
+               , wordList address model
+               , regenerateLink address]]
 
 update action model =
   case action of
@@ -201,6 +238,11 @@ update action model =
     RemoveTile pos -> removeTile model pos
     ClearBoard -> {model | currentPath = []}
     CompleteWord -> completeWord model
+    RemoveWord word -> removeWord model word
+    Regenerate -> regenerateRows model
+
+port title : String
+port title = "Boggle"
 
 main = StartApp.start { model = model
                       , view = view
