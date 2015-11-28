@@ -33,10 +33,12 @@ type Action
   | CompleteWord
   | Regenerate
   | RemoveWord String
+  | RemoveTiles TilePos
 
 validPos : Pos -> Bool
 validPos pos = True
 
+-- Some list utilities:
 zip xs ys =
   case (xs, ys) of
     (x :: xs', y :: ys') -> (x,y) :: zip xs' ys'
@@ -50,6 +52,19 @@ last xs =
 
 at xs i =
   head (drop i xs)
+
+takeWhile f xs =
+  case xs of
+    [] -> []
+    (x::xs') -> if f x then x :: (takeWhile f xs') else []
+
+findFrom f i xs =
+  case xs of
+    [] -> Nothing
+    (x::xs') -> if f x then Just i else findFrom f (i+1) xs'
+
+find f xs =
+  findFrom f 0 xs
 
 maybeEq mayx x =
   case mayx of
@@ -185,8 +200,8 @@ removeWord model word =
 listGen l default =
   R.map ((at l) >> (Maybe.withDefault default)) (R.int 0 ((length l) - 1))
 
-letterGen =
-  R.map (Char.fromCode >> String.fromChar) (R.int 65 90)
+-- letterGen =
+--   R.map (Char.fromCode >> String.fromChar) (R.int 65 90)
 
 consonantGen =
   listGen (String.toList "CDFGHJKLMNPQRSTVWXYZ") '!'
@@ -194,8 +209,11 @@ consonantGen =
 vowelGen =
   listGen (String.toList "AEIO") '!'
 
---letterGen =
+charGen =
+  listGen (String.toList "AAAAEEEEIIIIOOOOUUUUCCDDFFGGHJKLLMMNNPPQRRRSSSTTTVWXYZ") '!'
 
+letterGen =
+  R.map String.fromChar charGen
 
 letterListGen =
   R.list 4 letterGen
@@ -212,15 +230,25 @@ regenerateRows model =
               currentPath = [],
               words = [] }
 
+-- Remove all tiles after position
+removeTiles model pos =
+  let
+    {currentPath} = model
+  in
+    case find ((==) pos) currentPath of
+      Nothing -> model
+      Just idx -> { model | currentPath = take idx currentPath }
+
 fullLetter l =
   if l == "Q" then "Qu" else l
 
 viewLetter address currentPath rowIdx colIdx letter =
   if member (rowIdx, colIdx) currentPath then
     a [ class "letter-box"
+      , href "#"
       , style (if isLast currentPath (rowIdx, colIdx) then
                  lastStyle else selectedStyle)
-      , onClick address NoOp]
+      , onClick address (RemoveTiles (rowIdx, colIdx))]
     [text (fullLetter letter)]
   else
     a [class "letter-box"
@@ -295,6 +323,7 @@ update action model =
     NoOp -> model
     SelectTile pos -> selectTile model pos
     RemoveTile pos -> removeTile model pos
+    RemoveTiles pos -> removeTiles model pos
     ClearBoard -> {model | currentPath = []}
     CompleteWord -> completeWord model
     RemoveWord word -> removeWord model word
