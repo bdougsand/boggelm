@@ -7,9 +7,10 @@ import StartApp.Simple as StartApp
 import Html exposing (..)
 import Html.Attributes exposing (class, href, style)
 import Html.Events exposing (onClick)
-import List exposing (all, drop, filter, head, indexedMap, length, map, member, take)
+import List exposing (..)
 import Maybe exposing (andThen)
 import String exposing (join)
+import Time exposing (Time)
 import Random as R
 
 type alias Row = List(String)
@@ -18,7 +19,9 @@ type alias Board = {
     rows: List(Row),
     currentPath: WordPath,
     words: List(String),
-    seed: R.Seed
+    seed: R.Seed,
+    flash: Maybe String,
+    startTime: Time
 }
 
 type alias TilePos = (Int, Int)
@@ -58,6 +61,12 @@ takeWhile f xs =
     [] -> []
     (x::xs') -> if f x then x :: (takeWhile f xs') else []
 
+unfold p h t x =
+  if p x then
+    []
+  else
+    h x :: unfold p h t (t x)
+
 findFrom f i xs =
   case xs of
     [] -> Nothing
@@ -79,6 +88,8 @@ nth n xs =
     take 1 (drop n xs)
   else
     nth ((length xs) + n) xs
+
+
 
 makeList x = [x]
 
@@ -200,14 +211,8 @@ removeWord model word =
 listGen l default =
   R.map ((at l) >> (Maybe.withDefault default)) (R.int 0 ((length l) - 1))
 
--- letterGen =
---   R.map (Char.fromCode >> String.fromChar) (R.int 65 90)
-
-consonantGen =
-  listGen (String.toList "CDFGHJKLMNPQRSTVWXYZ") '!'
-
-vowelGen =
-  listGen (String.toList "AEIO") '!'
+without l idx =
+  take idx l ++ drop (idx+1) l
 
 charGen =
   listGen (String.toList "AAAAEEEEIIIIOOOOUUUUCCDDFFGGHJKLLMMNNPPQRRRSSSTTTVWXYZ") '!'
@@ -300,13 +305,12 @@ wordList address model =
      (map (workListItem address) model.words)
 
 model: Board
-model = {rows = [["A", "B", "C", "D"]
-                ,["E", "F", "G", "H"]
-                ,["I", "J", "K", "L"]
-                ,["M", "N", "O", "P"]],
+model = {rows = let (rows, _) = R.generate rowsGen (R.initialSeed 2) in rows,
          currentPath = [],
          words = [],
-         seed = R.initialSeed 23}
+         seed = R.initialSeed 23,
+         flash = Nothing,
+         startTime = 1234567}
 
 view address model =
   div [style gameStyle]
@@ -331,6 +335,10 @@ update action model =
 
 port title : String
 port title = "Boggle"
+
+appConfig = { view = view
+            , update = update
+            , inputs = [] }
 
 main = StartApp.start { model = model
                       , view = view
